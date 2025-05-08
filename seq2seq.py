@@ -777,6 +777,44 @@ test_loss = evaluate_fn(model, test_data_loader, criterion, device)
 print(f"| Test Loss: {test_loss:.3f} | Test PPL: {np.exp(test_loss):7.3f} |")
 
 
+# def translate_sentence(
+#     sentence,
+#     model,
+#     selfie_tokeniser,
+#     spectrum_tokeniser,
+#     spectrum_vocab,
+#     selfie_vocab,
+#     lower,
+#     sos_token,
+#     eos_token,
+#     device,
+#     max_output_length=25,
+# ):
+#     model.eval()
+#     with torch.no_grad():
+#         # if isinstance(sentence, str):
+#         #     tokens = [token.text for token in spectrum_tokeniser(sentence)]
+#         # else:
+#         #     tokens = [token for token in sentence]
+#         # if lower:
+#         #     tokens = [token.lower() for token in tokens]
+#         tokens = spectrum_tokeniser.tokenise(sentence)
+#         tokens = [sos_token] + tokens + [eos_token]
+#         ids = spectrum_vocab.lookup_indices(tokens)
+#         tensor = torch.LongTensor(ids).unsqueeze(-1).to(device)
+#         hidden, cell = model.encoder(tensor)
+#         inputs = selfie_vocab.lookup_indices([sos_token])
+#         for _ in range(max_output_length):
+#             inputs_tensor = torch.LongTensor([inputs[-1]]).to(device)
+#             output, hidden, cell = model.decoder(inputs_tensor, hidden, cell)
+#             predicted_token = output.argmax(-1).item()
+#             inputs.append(predicted_token)
+#             if predicted_token == selfie_vocab[eos_token]:
+#                 break
+#         tokens = selfie_vocab.lookup_tokens(inputs)
+#     return tokens
+
+
 def translate_sentence(
     sentence,
     model,
@@ -792,18 +830,22 @@ def translate_sentence(
 ):
     model.eval()
     with torch.no_grad():
-        # if isinstance(sentence, str):
-        #     tokens = [token.text for token in spectrum_tokeniser(sentence)]
-        # else:
-        #     tokens = [token for token in sentence]
-        # if lower:
-        #     tokens = [token.lower() for token in tokens]
-        tokens = spectrum_tokeniser.tokenise(sentence)
-        tokens = [sos_token] + tokens + [eos_token]
-        ids = spectrum_vocab.lookup_indices(tokens)
+        # If the input is already a list or tensor of token indices:
+        if isinstance(sentence, torch.Tensor):
+            ids = sentence.tolist()
+        elif isinstance(sentence, list) and all(isinstance(x, int) for x in sentence):
+            ids = sentence
+        else:
+            # Assume it's a raw spectrum array
+            tokens = spectrum_tokeniser.tokenise(sentence)
+            tokens = [sos_token] + tokens + [eos_token]
+            ids = spectrum_vocab.lookup_indices(tokens)
+
         tensor = torch.LongTensor(ids).unsqueeze(-1).to(device)
+
         hidden, cell = model.encoder(tensor)
         inputs = selfie_vocab.lookup_indices([sos_token])
+
         for _ in range(max_output_length):
             inputs_tensor = torch.LongTensor([inputs[-1]]).to(device)
             output, hidden, cell = model.decoder(inputs_tensor, hidden, cell)
@@ -811,14 +853,17 @@ def translate_sentence(
             inputs.append(predicted_token)
             if predicted_token == selfie_vocab[eos_token]:
                 break
+
         tokens = selfie_vocab.lookup_tokens(inputs)
     return tokens
 
 
+print(f"sentence 1: {test_data[1]['spectrum_ids']}")
+print(f"sentence 16: {test_data[16]['spectrum_ids']}")
 
+sentence = test_data[16]["spectrum_ids"]
 
-sentence = test_data[0]["spectrum_ids"]
-expected_translation = test_data[0]["selfie_ids"]
+expected_translation = test_data[16]["selfie_ids"]
 
 expected_ids = expected_translation.tolist()
 expected_tokens = selfie_tokeniser.inv_vocab
@@ -857,4 +902,59 @@ from rdkit.Chem import Draw
 # Convert SMILES to RDKit molecule and draw
 mol = Chem.MolFromSmiles(expected_smiles)
 img = Draw.MolToImage(mol)
-img.save("molecule.png")
+img.save("molecule_true.png")
+
+
+translation_smiles = sf.decoder(tokens_to_selfie(translation))
+mol = Chem.MolFromSmiles(translation_smiles)
+img = Draw.MolToImage(mol)
+img.save("molecule_output.png")
+
+
+def plot_input_output(index):
+    
+
+    sentence = test_data[index]["spectrum_ids"]
+    expected_translation = test_data[index]["selfie_ids"]
+
+    expected_ids = expected_translation.tolist()
+    expected_tokens = selfie_tokeniser.inv_vocab
+    expected_token_strings = [selfie_tokeniser.inv_vocab[idx] for idx in expected_ids]
+    print(f"Expected translation: {expected_token_strings}")
+
+    print(sentence)
+    print(expected_translation)
+
+    translation = translate_sentence(
+        sentence,
+        model,
+        selfie_tokeniser,
+        spectrum_tokeniser,
+        spectrum_vocab, 
+        selfie_vocab,
+        lower,
+        sos_token,
+        eos_token,
+        device,
+    )
+
+    expected_smiles = sf.decoder(tokens_to_selfie(expected_token_strings))
+
+    from rdkit import Chem
+    from rdkit.Chem import Draw
+
+    # Convert SMILES to RDKit molecule and draw
+    mol = Chem.MolFromSmiles(expected_smiles)
+    img = Draw.MolToImage(mol)
+    img.save(f"molecule_true{index}.png")
+
+
+    translation_smiles = sf.decoder(tokens_to_selfie(translation))
+    mol = Chem.MolFromSmiles(translation_smiles)
+    img = Draw.MolToImage(mol)
+    img.save(f"molecule_output{index}.png")
+
+    print(f"the translation for index {index} is {translation}")
+
+for i in range(0,10):
+    plot_input_output(i)
