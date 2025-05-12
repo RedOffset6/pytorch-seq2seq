@@ -747,29 +747,29 @@ teacher_forcing_ratio = 0.5
 
 best_valid_loss = float("inf")
 
-# for epoch in tqdm.tqdm(range(n_epochs)):
-#     train_loss = train_fn(
-#         model,
-#         train_data_loader,
-#         optimizer,
-#         criterion,
-#         clip,
-#         teacher_forcing_ratio,
-#         device,
-#     )
-#     valid_loss = evaluate_fn(
-#         model,
-#         valid_data_loader,
-#         criterion,
-#         device,
-#     )
-#     if valid_loss < best_valid_loss:
-#         best_valid_loss = valid_loss
-#         torch.save(model.state_dict(), "tut1-model.pt")
-#     print(f"\tTrain Loss: {train_loss:7.3f} | Train PPL: {np.exp(train_loss):7.3f}")
-#     print(f"\tValid Loss: {valid_loss:7.3f} | Valid PPL: {np.exp(valid_loss):7.3f}")
+for epoch in tqdm.tqdm(range(n_epochs)):
+    train_loss = train_fn(
+        model,
+        train_data_loader,
+        optimizer,
+        criterion,
+        clip,
+        teacher_forcing_ratio,
+        device,
+    )
+    valid_loss = evaluate_fn(
+        model,
+        valid_data_loader,
+        criterion,
+        device,
+    )
+    if valid_loss < best_valid_loss:
+        best_valid_loss = valid_loss
+        torch.save(model.state_dict(), "tut1-model.pt")
+    print(f"\tTrain Loss: {train_loss:7.3f} | Train PPL: {np.exp(train_loss):7.3f}")
+    print(f"\tValid Loss: {valid_loss:7.3f} | Valid PPL: {np.exp(valid_loss):7.3f}")
 
-#     model.load_state_dict(torch.load("tut1-model.pt"))
+    model.load_state_dict(torch.load("tut1-model.pt"))
 
 model.load_state_dict(torch.load("tut1-model.pt"))
 test_loss = evaluate_fn(model, test_data_loader, criterion, device)
