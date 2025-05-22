@@ -35,22 +35,6 @@ with open(dataset_path, "rb") as f:
 #prints molecule 1000 to test the data was correctly loaded
 print(dataset["1000"])
 
-# #defines a spectrum tokeniser class
-# class SpectrumTokeniser:
-#     def __init__(self):
-#         self.sos_token = "<sos>"
-#         self.eos_token = "<eos>"
-    
-#     def tokeniser(self, spectrum_array):
-#         # Extract peak indices (where value == 1)
-#         peak_indices = [str(idx) for idx, value in enumerate(spectrum_array) if value == 1]
-#         return peak_indices
-    
-#     def tokenise_with_special_tokens(self, spectrum_array):
-#         tokens = [self.sos_token] + self.tokeniser(spectrum_array) + [self.eos_token]
-#         return tokens
-
-
 class SpectrumTokeniser:
     def __init__(self, vocab, sos_token="<sos>", eos_token="<eos>", unk_token="<unk>"):
         self.vocab = vocab
@@ -118,16 +102,6 @@ print("Decoded:", decoded_spectrum)  # List of peak indices
 
 
 
-# #initilises an instance of the tokeniser
-# spectrum_tokeniser = SpectrumTokeniser()
-
-# #tokenises a spectrum as an example
-# example_spectrum = dataset["1000"]["binned_proton"]  # Get the binned spectrum
-# tokenised_spectrum = spectrum_tokeniser.tokenise_with_special_tokens(example_spectrum)
-
-# #prints the tokenised spectrum 
-# print("PRINTING TOKENISED SPECTRUM")
-# print(tokenised_spectrum)
 
 ##############################
 # TOKENISING A SELFIE STRING #
@@ -275,39 +249,6 @@ test_data = [
     for spec, self in zip(test_data["spectra"], test_data["selfies"])
 ]
 
-# print(f"length of train data = {len(train_data['spectra'])}")
-# print(f"test length = {len(test_data['spectra'])}")
-# print(f"valid length = {len(valid_data['spectra'])}")
-
-
-# dataset = datasets.load_dataset("bentrevett/multi30k")
-
-# print(dataset)
-
-# train_data, valid_data, test_data = (
-#     dataset["train"],
-#     dataset["validation"],
-#     dataset["test"],
-#)
-
-# train_data[0]
-
-# en_nlp = spacy.load("en_core_web_sm")
-# de_nlp = spacy.load("de_core_news_sm")
-
-# string = "What a lovely day it is today!"
-
-# print([token.text for token in en_nlp.tokenizer(string)])
-
-# def tokenize_example(example, en_nlp, de_nlp, max_length, lower, sos_token, eos_token):
-#     en_tokens = [token.text for token in en_nlp.tokenizer(example["en"])][:max_length]
-#     de_tokens = [token.text for token in de_nlp.tokenizer(example["de"])][:max_length]
-#     if lower:
-#         en_tokens = [token.lower() for token in en_tokens]
-#         de_tokens = [token.lower() for token in de_tokens]
-#     en_tokens = [sos_token] + en_tokens + [eos_token]
-#     de_tokens = [sos_token] + de_tokens + [eos_token]
-#     return {"en_tokens": en_tokens, "de_tokens": de_tokens}
 
 def tokenise_example(example, spectrum_tokeniser, selfie_tokeniser):
     spectrum_tokens = spectrum_tokeniser.tokenise_with_special_tokens(example["spectrum"])
@@ -345,19 +286,6 @@ special_tokens = [
     eos_token,
 ]
 
-# en_vocab = torchtext.vocab.build_vocab_from_iterator(
-#     train_data["en_tokens"],
-#     min_freq=min_freq,
-#     specials=special_tokens,
-# )
-
-# de_vocab = torchtext.vocab.build_vocab_from_iterator(
-#     train_data["de_tokens"],
-#     min_freq=min_freq,
-#     specials=special_tokens,
-# )
-
-# print(en_vocab.get_itos()[:10])
 
 assert spectrum_vocab[unk_token] == selfie_vocab[unk_token]
 assert spectrum_vocab[pad_token] == selfie_vocab[pad_token]
@@ -403,11 +331,7 @@ train_data = [numericalize_example(ex, **fn_kwargs) for ex in train_data]
 valid_data = [numericalize_example(ex, **fn_kwargs) for ex in valid_data]
 test_data  = [numericalize_example(ex, **fn_kwargs) for ex in test_data]
 
-#print(train_data)
 
-# train_data = train_data.map(numericalize_example, fn_kwargs=fn_kwargs)
-# valid_data = valid_data.map(numericalize_example, fn_kwargs=fn_kwargs)
-# test_data = test_data.map(numericalize_example, fn_kwargs=fn_kwargs)
 from datasets import Dataset
 
 train_data = Dataset.from_list(train_data)
@@ -587,24 +511,7 @@ class Seq2Seq(nn.Module):
         # cell = [n layers * n directions, batch size, hidden dim]
         # first input to the decoder is the <sos> tokens
         input = trg[0, :]
-        # input = [batch size]
-        # for t in range(1, trg_length):
-        #     # insert input token embedding, previous hidden and previous cell states
-        #     # receive output tensor (predictions) and new hidden and cell states
-        #     output, hidden, cell = self.decoder(input, hidden, cell)
-        #     # output = [batch size, output dim]
-        #     # hidden = [n layers, batch size, hidden dim]
-        #     # cell = [n layers, batch size, hidden dim]
-        #     # place predictions in a tensor holding predictions for each token
-        #     outputs[t] = output
-        #     # decide if we are going to use teacher forcing or not
-        #     teacher_force = random.random() < teacher_forcing_ratio
-        #     # get the highest predicted token from our predictions
-        #     top1 = output.argmax(1)
-        #     # if teacher forcing, use actual next token as next input
-        #     # if not, use predicted token
-        #     input = trg[t] if teacher_force else top1
-        #     # input = [batch size]
+
 
 
         for t in range(1, trg_length):
@@ -644,7 +551,7 @@ decoder_dropout = 0.5
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# device = torch.device("cpu")
+
 
 
 print("Helllo 1")
@@ -777,42 +684,6 @@ test_loss = evaluate_fn(model, test_data_loader, criterion, device)
 print(f"| Test Loss: {test_loss:.3f} | Test PPL: {np.exp(test_loss):7.3f} |")
 
 
-# def translate_sentence(
-#     sentence,
-#     model,
-#     selfie_tokeniser,
-#     spectrum_tokeniser,
-#     spectrum_vocab,
-#     selfie_vocab,
-#     lower,
-#     sos_token,
-#     eos_token,
-#     device,
-#     max_output_length=25,
-# ):
-#     model.eval()
-#     with torch.no_grad():
-#         # if isinstance(sentence, str):
-#         #     tokens = [token.text for token in spectrum_tokeniser(sentence)]
-#         # else:
-#         #     tokens = [token for token in sentence]
-#         # if lower:
-#         #     tokens = [token.lower() for token in tokens]
-#         tokens = spectrum_tokeniser.tokenise(sentence)
-#         tokens = [sos_token] + tokens + [eos_token]
-#         ids = spectrum_vocab.lookup_indices(tokens)
-#         tensor = torch.LongTensor(ids).unsqueeze(-1).to(device)
-#         hidden, cell = model.encoder(tensor)
-#         inputs = selfie_vocab.lookup_indices([sos_token])
-#         for _ in range(max_output_length):
-#             inputs_tensor = torch.LongTensor([inputs[-1]]).to(device)
-#             output, hidden, cell = model.decoder(inputs_tensor, hidden, cell)
-#             predicted_token = output.argmax(-1).item()
-#             inputs.append(predicted_token)
-#             if predicted_token == selfie_vocab[eos_token]:
-#                 break
-#         tokens = selfie_vocab.lookup_tokens(inputs)
-#     return tokens
 
 
 def translate_sentence(
