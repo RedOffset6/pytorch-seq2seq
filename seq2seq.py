@@ -643,8 +643,8 @@ encoder_dropout = 0.5
 decoder_dropout = 0.5
 
 
-#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = torch.device("cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cpu")
 
 
 print("Helllo 1")
