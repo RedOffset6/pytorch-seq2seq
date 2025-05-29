@@ -407,72 +407,26 @@ print("PRE ENCODER PHASE COMPLETE")
 # #  '----------------'  '----------------'  '----------------'  '----------------'  '----------------'  '----------------'  '----------------' 
 
 
-class Encoder(nn.Module):
-    def __init__(self, input_dim, embedding_dim, hidden_dim, n_layers, dropout):
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, dropout=0.1, max_len=5000):
         super().__init__()
-        self.hidden_dim = hidden_dim
-        self.n_layers = n_layers
-        self.embedding = nn.Embedding(input_dim, embedding_dim)
-        self.rnn = nn.LSTM(embedding_dim, hidden_dim, n_layers, dropout=dropout)
-        self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, src):
-        # src = [src length, batch size]
-        embedded = self.dropout(self.embedding(src))
-        # embedded = [src length, batch size, embedding dim]
-        outputs, (hidden, cell) = self.rnn(embedded)
-        # outputs = [src length, batch size, hidden dim * n directions]
-        # hidden = [n layers * n directions, batch size, hidden dim]
-        # cell = [n layers * n directions, batch size, hidden dim]
-        # outputs are always from the top hidden layer
-        return hidden, cell
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
 
-# #  .----------------.  .----------------.  .----------------.  .----------------.  .----------------.  .----------------.  .----------------. 
-# # | .--------------. || .--------------. || .--------------. || .--------------. || .--------------. || .--------------. || .--------------. |
-# # | |  ________    | || |  _________   | || |     ______   | || |     ____     | || |  ________    | || |  _________   | || |  _______     | |
-# # | | |_   ___ `.  | || | |_   ___  |  | || |   .' ___  |  | || |   .'    `.   | || | |_   ___ `.  | || | |_   ___  |  | || | |_   __ \    | |
-# # | |   | |   `. \ | || |   | |_  \_|  | || |  / .'   \_|  | || |  /  .--.  \  | || |   | |   `. \ | || |   | |_  \_|  | || |   | |__) |   | |
-# # | |   | |    | | | || |   |  _|  _   | || |  | |         | || |  | |    | |  | || |   | |    | | | || |   |  _|  _   | || |   |  __ /    | |
-# # | |  _| |___.' / | || |  _| |___/ |  | || |  \ `.___.'\  | || |  \  `--'  /  | || |  _| |___.' / | || |  _| |___/ |  | || |  _| |  \ \_  | |
-# # | | |________.'  | || | |_________|  | || |   `._____.'  | || |   `.____.'   | || | |________.'  | || | |_________|  | || | |____| |___| | |
-# # | |              | || |              | || |              | || |              | || |              | || |              | || |              | |
-# # | '--------------' || '--------------' || '--------------' || '--------------' || '--------------' || '--------------' || '--------------' |
-# #  '----------------'  '----------------'  '----------------'  '----------------'  '----------------'  '----------------'  '----------------' 
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
 
+        pe = pe.unsqueeze(1)  # [max_len, 1, d_model]
+        self.register_buffer('pe', pe)
 
-class Decoder(nn.Module):
-    def __init__(self, output_dim, embedding_dim, hidden_dim, n_layers, dropout):
-        super().__init__()
-        self.output_dim = output_dim
-        self.hidden_dim = hidden_dim
-        self.n_layers = n_layers
-        self.embedding = nn.Embedding(output_dim, embedding_dim)
-        self.rnn = nn.LSTM(embedding_dim, hidden_dim, n_layers, dropout=dropout)
-        self.fc_out = nn.Linear(hidden_dim, output_dim)
-        self.dropout = nn.Dropout(dropout)
+    def forward(self, x):
+        # x: [seq_len, batch_size, d_model]
+        x = x + self.pe[:x.size(0)]
+        return self.dropout(x)
 
-    def forward(self, input, hidden, cell):
-        # input = [batch size]
-        # hidden = [n layers * n directions, batch size, hidden dim]
-        # cell = [n layers * n directions, batch size, hidden dim]
-        # n directions in the decoder will both always be 1, therefore:
-        # hidden = [n layers, batch size, hidden dim]
-        # context = [n layers, batch size, hidden dim]
-        input = input.unsqueeze(0)
-        # input = [1, batch size]
-        embedded = self.dropout(self.embedding(input))
-        # embedded = [1, batch size, embedding dim]
-        output, (hidden, cell) = self.rnn(embedded, (hidden, cell))
-        # output = [seq length, batch size, hidden dim * n directions]
-        # hidden = [n layers * n directions, batch size, hidden dim]
-        # cell = [n layers * n directions, batch size, hidden dim]
-        # seq length and n directions will always be 1 in this decoder, therefore:
-        # output = [1, batch size, hidden dim]
-        # hidden = [n layers, batch size, hidden dim]
-        # cell = [n layers, batch size, hidden dim]
-        prediction = self.fc_out(output.squeeze(0))
-        # prediction = [batch size, output dim]
-        return prediction, hidden, cell
         
 # #      _______. _______   ______      ___        _______. _______   ______      
 # #     /       ||   ____| /  __  \    |__ \      /       ||   ____| /  __  \     
@@ -482,52 +436,48 @@ class Decoder(nn.Module):
 # # |_______/    |_______| \_____\_____\____| |_______/    |_______| \_____\_____\
                                                                                
 
-class Seq2Seq(nn.Module):
-    def __init__(self, encoder, decoder, device):
+import torch
+import torch.nn as nn
+import math
+
+class TransformerSeq2Seq(nn.Module):
+    def __init__(self, input_dim, output_dim, embedding_dim, n_heads, hidden_dim, num_layers, dropout, device, max_len=100):
         super().__init__()
-        self.encoder = encoder
-        self.decoder = decoder
         self.device = device
-        assert (
-            encoder.hidden_dim == decoder.hidden_dim
-        ), "Hidden dimensions of encoder and decoder must be equal!"
-        assert (
-            encoder.n_layers == decoder.n_layers
-        ), "Encoder and decoder must have equal number of layers!"
+        self.src_embedding = nn.Embedding(input_dim, embedding_dim)
+        self.trg_embedding = nn.Embedding(output_dim, embedding_dim)
 
-    def forward(self, src, trg, teacher_forcing_ratio):
-        # src = [src length, batch size]
-        # trg = [trg length, batch size]
-        # teacher_forcing_ratio is probability to use teacher forcing
-        # e.g. if teacher_forcing_ratio is 0.75 we use ground-truth inputs 75% of the time
-        batch_size = trg.shape[1]
-        trg_length = trg.shape[0]
-        trg_vocab_size = self.decoder.output_dim
-        # tensor to store decoder outputs
-        outputs = torch.zeros(trg_length, batch_size, trg_vocab_size).to(self.device)
-        # last hidden state of the encoder is used as the initial hidden state of the decoder
-        hidden, cell = self.encoder(src)
-        # hidden = [n layers * n directions, batch size, hidden dim]
-        # cell = [n layers * n directions, batch size, hidden dim]
-        # first input to the decoder is the <sos> tokens
-        input = trg[0, :]
+        self.pos_encoder = PositionalEncoding(embedding_dim, dropout, max_len)
+        self.pos_decoder = PositionalEncoding(embedding_dim, dropout, max_len)
 
+        self.transformer = nn.Transformer(
+            d_model=embedding_dim,
+            nhead=n_heads,
+            num_encoder_layers=num_layers,
+            num_decoder_layers=num_layers,
+            dim_feedforward=hidden_dim,
+            dropout=dropout,
+            batch_first=False
+        )
 
+        self.fc_out = nn.Linear(embedding_dim, output_dim)
 
-        for t in range(1, trg_length):
-            output, hidden, cell = self.decoder(input, hidden, cell)
-            outputs[t] = output
-            teacher_force = random.random() < teacher_forcing_ratio
-            top1 = output.argmax(1)
-            top1 = top1.clamp(0, self.decoder.output_dim - 1)   # <--- ADD THIS LINE
-            #input = trg[t] if teacher_force else top1
-            if teacher_force:
-                input = trg[t].clamp(0, self.decoder.output_dim - 1)
-            else:
-                input = top1
+    def forward(self, src, trg):
+        # src = [src_len, batch_size]
+        # trg = [trg_len, batch_size]
 
+        src_emb = self.pos_encoder(self.src_embedding(src) * math.sqrt(self.src_embedding.embedding_dim))
+        trg_emb = self.pos_decoder(self.trg_embedding(trg) * math.sqrt(self.trg_embedding.embedding_dim))
 
-        return outputs
+        src_mask = None
+        tgt_mask = self.generate_square_subsequent_mask(trg.size(0)).to(self.device)
+
+        output = self.transformer(src_emb, trg_emb, src_mask=src_mask, tgt_mask=tgt_mask)
+        return self.fc_out(output)
+
+    def generate_square_subsequent_mask(self, sz):
+        # Prevents attention to future positions in decoder
+        return torch.triu(torch.ones((sz, sz)) * float('-inf'), diagonal=1)
 
 
 # # .___________..______          ___       __  .__   __.  __  .__   __.   _______ 
@@ -550,34 +500,22 @@ encoder_dropout = 0.5
 decoder_dropout = 0.5
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 
 
+model = TransformerSeq2Seq(
+    input_dim=input_dim,
+    output_dim=output_dim,
+    embedding_dim=encoder_embedding_dim,
+    n_heads=8,  # or your desired number of heads
+    hidden_dim=hidden_dim,
+    num_layers=n_layers,
+    dropout=encoder_dropout,
+    device=device,
+    max_len=100
+).to(device)
 
-print("Helllo 1")
-encoder = Encoder(
-    input_dim,
-    encoder_embedding_dim,
-    hidden_dim,
-    n_layers,
-    encoder_dropout,
-)
-print("hello 2")
-decoder = Decoder(
-    output_dim,
-    decoder_embedding_dim,
-    hidden_dim,
-    n_layers,
-    decoder_dropout,
-)
-print("HELLO 4")
-
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-print(f"Number of trainable parameters: {count_parameters(encoder) + count_parameters(decoder):,}")
-
-model = Seq2Seq(encoder, decoder, device).to(device)
 
 print("model succesfully put on device")
 
@@ -614,7 +552,7 @@ def train_fn(
         # src = [src length, batch size]
         # trg = [trg length, batch size]
         optimizer.zero_grad()
-        output = model(src, trg, teacher_forcing_ratio)
+        output = model(src, trg)
         # output = [trg length, batch size, trg vocab size]
         output_dim = output.shape[-1]
         output = output[1:].view(-1, output_dim)
@@ -637,7 +575,7 @@ def evaluate_fn(model, data_loader, criterion, device):
             trg = batch["selfie_ids"].to(device)
             # src = [src length, batch size]
             # trg = [trg length, batch size]
-            output = model(src, trg, 0)  # turn off teacher forcing
+            output = model(src, trg)  # turn off teacher forcing
             # output = [trg length, batch size, trg vocab size]
             output_dim = output.shape[-1]
             output = output[1:].view(-1, output_dim)
