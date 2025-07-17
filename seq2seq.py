@@ -407,214 +407,36 @@ print("PRE ENCODER PHASE COMPLETE")
 # #  '----------------'  '----------------'  '----------------'  '----------------'  '----------------'  '----------------'  '----------------' 
 
 
-class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, dropout=0.1, max_len=5000):
-        super().__init__()
-        self.dropout = nn.Dropout(p=dropout)
+ 
+#######
+#
+#    UNHASH TO TRAIN
+#
+##########
 
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+# for epoch in tqdm.tqdm(range(n_epochs)):
+#     train_loss = train_fn(
+#         model,
+#         train_data_loader,
+#         optimizer,
+#         criterion,
+#         clip,
+#         teacher_forcing_ratio,
+#         device,
+#     )
+#     valid_loss = evaluate_fn(
+#         model,
+#         valid_data_loader,
+#         criterion,
+#         device,
+#     )
+#     if valid_loss < best_valid_loss:
+#         best_valid_loss = valid_loss
+#         torch.save(model.state_dict(), "tut1-model.pt")
+#     print(f"\tTrain Loss: {train_loss:7.3f} | Train PPL: {np.exp(train_loss):7.3f}")
+#     print(f"\tValid Loss: {valid_loss:7.3f} | Valid PPL: {np.exp(valid_loss):7.3f}")
 
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-
-        pe = pe.unsqueeze(1)  # [max_len, 1, d_model]
-        self.register_buffer('pe', pe)
-
-    def forward(self, x):
-        # x: [seq_len, batch_size, d_model]
-        x = x + self.pe[:x.size(0)]
-        return self.dropout(x)
-
-        
-# #      _______. _______   ______      ___        _______. _______   ______      
-# #     /       ||   ____| /  __  \    |__ \      /       ||   ____| /  __  \     
-# #    |   (----`|  |__   |  |  |  |      ) |    |   (----`|  |__   |  |  |  |    
-# #     \   \    |   __|  |  |  |  |     / /      \   \    |   __|  |  |  |  |    
-# # .----)   |   |  |____ |  `--'  '--. / /_  .----)   |   |  |____ |  `--'  '--. 
-# # |_______/    |_______| \_____\_____\____| |_______/    |_______| \_____\_____\
-                                                                               
-
-import torch
-import torch.nn as nn
-import math
-
-class TransformerSeq2Seq(nn.Module):
-    def __init__(self, input_dim, output_dim, embedding_dim, n_heads, hidden_dim, num_layers, dropout, device, max_len=100):
-        super().__init__()
-        self.device = device
-        self.src_embedding = nn.Embedding(input_dim, embedding_dim)
-        self.trg_embedding = nn.Embedding(output_dim, embedding_dim)
-
-        self.pos_encoder = PositionalEncoding(embedding_dim, dropout, max_len)
-        self.pos_decoder = PositionalEncoding(embedding_dim, dropout, max_len)
-
-        self.transformer = nn.Transformer(
-            d_model=embedding_dim,
-            nhead=n_heads,
-            num_encoder_layers=num_layers,
-            num_decoder_layers=num_layers,
-            dim_feedforward=hidden_dim,
-            dropout=dropout,
-            batch_first=False
-        )
-
-        self.fc_out = nn.Linear(embedding_dim, output_dim)
-
-    def forward(self, src, trg):
-        # src = [src_len, batch_size]
-        # trg = [trg_len, batch_size]
-
-        src_emb = self.pos_encoder(self.src_embedding(src) * math.sqrt(self.src_embedding.embedding_dim))
-        trg_emb = self.pos_decoder(self.trg_embedding(trg) * math.sqrt(self.trg_embedding.embedding_dim))
-
-        src_mask = None
-        tgt_mask = self.generate_square_subsequent_mask(trg.size(0)).to(self.device)
-
-        output = self.transformer(src_emb, trg_emb, src_mask=src_mask, tgt_mask=tgt_mask)
-        return self.fc_out(output)
-
-    def generate_square_subsequent_mask(self, sz):
-        # Prevents attention to future positions in decoder
-        return torch.triu(torch.ones((sz, sz)) * float('-inf'), diagonal=1)
-
-
-# # .___________..______          ___       __  .__   __.  __  .__   __.   _______ 
-# # |           ||   _  \        /   \     |  | |  \ |  | |  | |  \ |  |  /  _____|
-# # `---|  |----`|  |_)  |      /  ^  \    |  | |   \|  | |  | |   \|  | |  |  __  
-# #     |  |     |      /      /  /_\  \   |  | |  . `  | |  | |  . `  | |  | |_ | 
-# #     |  |     |  |\  \----./  _____  \  |  | |  |\   | |  | |  |\   | |  |__| | 
-# #     |__|     | _| `._____/__/     \__\ |__| |__| \__| |__| |__| \__|  \______| 
-print(F"Printing the spectrum vocab length {len(spectrum_vocab)}")
-print(F"Printing the selfie vocab length {len(selfie_vocab)}")
-
-
-input_dim = len(spectrum_vocab)
-output_dim = len(selfie_vocab)
-encoder_embedding_dim = 256
-decoder_embedding_dim = 256
-hidden_dim = 512
-n_layers = 2
-encoder_dropout = 0.5
-decoder_dropout = 0.5
-
-
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = torch.device("cpu")
-
-
-model = TransformerSeq2Seq(
-    input_dim=input_dim,
-    output_dim=output_dim,
-    embedding_dim=encoder_embedding_dim,
-    n_heads=8,  # or your desired number of heads
-    hidden_dim=hidden_dim,
-    num_layers=n_layers,
-    dropout=encoder_dropout,
-    device=device,
-    max_len=100
-).to(device)
-
-
-print("model succesfully put on device")
-
-def init_weights(m):
-    for name, param in m.named_parameters():
-        nn.init.uniform_(param.data, -0.08, 0.08)
-
-
-model.apply(init_weights)
-
-
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-
-print(f"The model has {count_parameters(model):,} trainable parameters")
-
-optimizer = optim.Adam(model.parameters())
-
-criterion = nn.CrossEntropyLoss(ignore_index=pad_index)
-
-def train_fn(
-    model, data_loader, optimizer, criterion, clip, teacher_forcing_ratio, device
-):
-    model.train()
-    epoch_loss = 0
-    for i, batch in enumerate(data_loader):
-        # print("🔍 Keys in batch:", batch.keys())
-        # print("📐 spectrum_ids shape:", batch["spectrum_ids"].shape)
-        # print("📐 selfie_ids shape:", batch["selfie_ids"].shape)
-
-        src = batch["spectrum_ids"].to(device)
-        trg = batch["selfie_ids"].to(device)
-        # src = [src length, batch size]
-        # trg = [trg length, batch size]
-        optimizer.zero_grad()
-        output = model(src, trg)
-        # output = [trg length, batch size, trg vocab size]
-        output_dim = output.shape[-1]
-        output = output[1:].view(-1, output_dim)
-        # output = [(trg length - 1) * batch size, trg vocab size]
-        trg = trg[1:].view(-1)
-        # trg = [(trg length - 1) * batch size]
-        loss = criterion(output, trg)
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
-        optimizer.step()
-        epoch_loss += loss.item()
-    return epoch_loss / len(data_loader)
-
-def evaluate_fn(model, data_loader, criterion, device):
-    model.eval()
-    epoch_loss = 0
-    with torch.no_grad():
-        for i, batch in enumerate(data_loader):
-            src = batch["spectrum_ids"].to(device)
-            trg = batch["selfie_ids"].to(device)
-            # src = [src length, batch size]
-            # trg = [trg length, batch size]
-            output = model(src, trg)  # turn off teacher forcing
-            # output = [trg length, batch size, trg vocab size]
-            output_dim = output.shape[-1]
-            output = output[1:].view(-1, output_dim)
-            # output = [(trg length - 1) * batch size, trg vocab size]
-            trg = trg[1:].view(-1)
-            # trg = [(trg length - 1) * batch size]
-            loss = criterion(output, trg)
-            epoch_loss += loss.item()
-    return epoch_loss / len(data_loader)
-
-n_epochs = 10
-clip = 1.0
-teacher_forcing_ratio = 0.5
-
-best_valid_loss = float("inf")
-
-for epoch in tqdm.tqdm(range(n_epochs)):
-    train_loss = train_fn(
-        model,
-        train_data_loader,
-        optimizer,
-        criterion,
-        clip,
-        teacher_forcing_ratio,
-        device,
-    )
-    valid_loss = evaluate_fn(
-        model,
-        valid_data_loader,
-        criterion,
-        device,
-    )
-    if valid_loss < best_valid_loss:
-        best_valid_loss = valid_loss
-        torch.save(model.state_dict(), "tut1-model.pt")
-    print(f"\tTrain Loss: {train_loss:7.3f} | Train PPL: {np.exp(train_loss):7.3f}")
-    print(f"\tValid Loss: {valid_loss:7.3f} | Valid PPL: {np.exp(valid_loss):7.3f}")
-
-    model.load_state_dict(torch.load("tut1-model.pt"))
+#     model.load_state_dict(torch.load("tut1-model.pt"))
 
 model.load_state_dict(torch.load("tut1-model.pt"))
 test_loss = evaluate_fn(model, test_data_loader, criterion, device)
@@ -639,32 +461,29 @@ def translate_sentence(
 ):
     model.eval()
     with torch.no_grad():
-        # If the input is already a list or tensor of token indices:
         if isinstance(sentence, torch.Tensor):
             ids = sentence.tolist()
         elif isinstance(sentence, list) and all(isinstance(x, int) for x in sentence):
             ids = sentence
         else:
-            # Assume it's a raw spectrum array
             tokens = spectrum_tokeniser.tokenise(sentence)
             tokens = [sos_token] + tokens + [eos_token]
             ids = spectrum_vocab.lookup_indices(tokens)
 
-        tensor = torch.LongTensor(ids).unsqueeze(-1).to(device)
+        src = torch.LongTensor(ids).unsqueeze(1).to(device)  # [src_len, 1]
+        trg_indexes = [selfie_vocab[sos_token]]
 
-        hidden, cell = model.encoder(tensor)
-        inputs = selfie_vocab.lookup_indices([sos_token])
-
-        for _ in range(max_output_length):
-            inputs_tensor = torch.LongTensor([inputs[-1]]).to(device)
-            output, hidden, cell = model.decoder(inputs_tensor, hidden, cell)
-            predicted_token = output.argmax(-1).item()
-            inputs.append(predicted_token)
-            if predicted_token == selfie_vocab[eos_token]:
+        for i in range(max_output_length):
+            trg_tensor = torch.LongTensor(trg_indexes).unsqueeze(1).to(device)  # [cur_len, 1]
+            output = model(src, trg_tensor)  # [cur_len, 1, vocab_size]
+            next_token = output[-1, 0].argmax(-1).item()
+            trg_indexes.append(next_token)
+            if next_token == selfie_vocab[eos_token]:
                 break
 
-        tokens = selfie_vocab.lookup_tokens(inputs)
-    return tokens
+        tokens = selfie_vocab.lookup_tokens(trg_indexes)
+        return tokens
+
 
 
 print(f"sentence 1: {test_data[1]['spectrum_ids']}")
